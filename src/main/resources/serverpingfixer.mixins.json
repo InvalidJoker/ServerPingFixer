@@ -1,0 +1,15 @@
+{
+	"required": true,
+	"package": "de.joker.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"priority": 2000,
+	"client": [
+		"ServerStatusPingerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

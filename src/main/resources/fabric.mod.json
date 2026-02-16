@@ -1,0 +1,31 @@
+{
+	"schemaVersion": 1,
+	"id": "serverpingfixer",
+	"version": "${version}",
+	"name": "ServerPingFixer",
+	"description": "This is an example description! Tell everyone what your mod is about!",
+	"authors": [
+		"InvalidJoker"
+	],
+	"contact": {
+		"homepage": "https://github.com/InvalidJoker/ServerPingFixer",
+		"sources": "https://github.com/InvalidJoker/ServerPingFixer"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/serverpingfixer/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"de.joker.ServerPingFixer"
+		]
+	},
+	"mixins": [
+		"serverpingfixer.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.18.4",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
