@@ -3,7 +3,7 @@
 	"id": "serverpingfixer",
 	"version": "${version}",
 	"name": "ServerPingFixer",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "Resolves an issue where the initial server ping fails when a Minecraft server is protected by GCORE.",
 	"authors": [
 		"InvalidJoker"
 	],
