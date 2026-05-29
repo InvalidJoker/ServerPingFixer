@@ -17,19 +17,21 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.Collections;
 import java.util.Queue;
-import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentMap;
 
 @Mixin(ServerStatusPinger.class)
 public abstract class ServerStatusPingerMixin {
     @Unique
-    private static final Logger log = LoggerFactory.getLogger(ServerStatusPingerMixin.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServerStatusPingerMixin.class);
 
     @Unique
-    private static final Set<String> SECOND_PING =
-            Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+    private static final int MAX_ATTEMPTS = 3;
+
+    @Unique
+    private static final ConcurrentMap<ServerData, Integer> ATTEMPTS = new ConcurrentHashMap<>();
 
     @Unique
     private static final Queue<Runnable> RETRY_QUEUE = new ConcurrentLinkedQueue<>();
@@ -37,6 +39,7 @@ public abstract class ServerStatusPingerMixin {
     @Inject(method = "tick", at = @At("TAIL"))
     private void runQueuedRetries(CallbackInfo ci) {
         Runnable task;
+
         while ((task = RETRY_QUEUE.poll()) != null) {
             task.run();
         }
@@ -54,10 +57,9 @@ public abstract class ServerStatusPingerMixin {
             Runnable onPongResponse,
             EventLoopGroupHolder eventLoopGroupHolder
     ) {
-        ServerStatusPinger self = (ServerStatusPinger)(Object)this;
+        ServerStatusPinger pinger = (ServerStatusPinger) (Object) this;
 
         return new ClientStatusPacketListener() {
-
             @Override
             public void handleStatusResponse(@NonNull ClientboundStatusResponsePacket packet) {
                 original.handleStatusResponse(packet);
@@ -70,37 +72,41 @@ public abstract class ServerStatusPingerMixin {
 
             @Override
             public void onDisconnect(@NonNull DisconnectionDetails details) {
-                if (details.reason().getString().equals("Finished")) {
+                if (isFinished(details)) {
                     original.onDisconnect(details);
                     return;
                 }
 
-                //log.warn("Failed to ping server {}: {}", data.ip, details.reason().getString());
+                int attempt = ATTEMPTS.merge(data, 1, Integer::sum);
 
-                if (SECOND_PING.add(data.ip)) {
-                    RETRY_QUEUE.add(() -> {
-                        try {
-                            self.pingServer(
-                                    data,
-                                    onPersistentDataChange,
-                                    () -> {
-                                        SECOND_PING.remove(data.ip);
-                                        onPongResponse.run();
-                                    },
-                                    eventLoopGroupHolder
-                            );
-                        } catch (Throwable t) {
-                            log.error("Error while retrying ping for server {}: {}", data.ip, t.getMessage(), t);
-                            SECOND_PING.remove(data.ip);
-                            original.onDisconnect(details);
-                        }
-                    });
+                if (attempt < MAX_ATTEMPTS) {
+                    LOGGER.warn(
+                            "Ping attempt {} for server {} failed, retrying...",
+                            attempt,
+                            data.ip
+                    );
+
+                    RETRY_QUEUE.add(() -> retryPing(
+                            pinger,
+                            data,
+                            onPersistentDataChange,
+                            onPongResponse,
+                            eventLoopGroupHolder,
+                            original,
+                            details
+                    ));
+
                     return;
                 }
 
-                log.warn("Second ping attempt for server {} failed, giving up: {}", data.ip, details.reason().getString());
+                LOGGER.warn(
+                        "Ping attempt {} for server {} failed, giving up: {}",
+                        attempt,
+                        data.ip,
+                        details.reason().getString()
+                );
 
-                SECOND_PING.remove(data.ip);
+                cleanup(data);
                 original.onDisconnect(details);
             }
 
@@ -109,5 +115,47 @@ public abstract class ServerStatusPingerMixin {
                 return original.isAcceptingMessages();
             }
         };
+    }
+
+    @Unique
+    private void retryPing(
+            ServerStatusPinger pinger,
+            ServerData data,
+            Runnable onPersistentDataChange,
+            Runnable onPongResponse,
+            EventLoopGroupHolder eventLoopGroupHolder,
+            ClientStatusPacketListener original,
+            DisconnectionDetails details
+    ) {
+        try {
+            pinger.pingServer(
+                    data,
+                    onPersistentDataChange,
+                    () -> {
+                        cleanup(data);
+                        onPongResponse.run();
+                    },
+                    eventLoopGroupHolder
+            );
+        } catch (Throwable throwable) {
+            LOGGER.error(
+                    "Error while retrying ping for server {}",
+                    data.ip,
+                    throwable
+            );
+
+            cleanup(data);
+            original.onDisconnect(details);
+        }
+    }
+
+    @Unique
+    private static boolean isFinished(DisconnectionDetails details) {
+        return "Finished".equals(details.reason().getString());
+    }
+
+    @Unique
+    private static void cleanup(ServerData data) {
+        ATTEMPTS.remove(data);
     }
 }
