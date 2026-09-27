@@ -2,14 +2,11 @@ package de.joker.mixin;
 
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.ServerStatusPinger;
-import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
-import net.minecraft.network.protocol.ping.ClientboundPongResponsePacket;
 import net.minecraft.network.protocol.status.ClientStatusPacketListener;
+import net.minecraft.network.protocol.status.ClientboundPongResponsePacket;
 import net.minecraft.network.protocol.status.ClientboundStatusResponsePacket;
-import net.minecraft.server.network.EventLoopGroupHolder;
-import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -24,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 
+// Minecraft 1.20.2 - 1.20.4
 @Mixin(ServerStatusPinger.class)
 public abstract class ServerStatusPingerMixin {
     @Unique
@@ -55,27 +53,27 @@ public abstract class ServerStatusPingerMixin {
     private ClientStatusPacketListener replaceListener(
             ClientStatusPacketListener original,
             ServerData data,
-            Runnable onPersistentDataChange,
-            Runnable onPongResponse,
-            EventLoopGroupHolder eventLoopGroupHolder
+            Runnable onPersistentDataChange
     ) {
         ServerStatusPinger pinger = (ServerStatusPinger) (Object) this;
 
         return new ClientStatusPacketListener() {
             @Override
-            public void handleStatusResponse(@NonNull ClientboundStatusResponsePacket packet) {
+            public void handleStatusResponse(ClientboundStatusResponsePacket packet) {
                 original.handleStatusResponse(packet);
             }
 
             @Override
-            public void handlePongResponse(@NonNull ClientboundPongResponsePacket packet) {
+            public void handlePongResponse(ClientboundPongResponsePacket packet) {
+                // No pong callback in this version, so reset the attempts here
+                cleanup(data);
                 original.handlePongResponse(packet);
             }
 
             @Override
-            public void onDisconnect(@NonNull DisconnectionDetails details) {
-                if (isFinished(details)) {
-                    original.onDisconnect(details);
+            public void onDisconnect(Component reason) {
+                if (isFinished(reason)) {
+                    original.onDisconnect(reason);
                     return;
                 }
 
@@ -92,10 +90,8 @@ public abstract class ServerStatusPingerMixin {
                             pinger,
                             data,
                             onPersistentDataChange,
-                            onPongResponse,
-                            eventLoopGroupHolder,
                             original,
-                            details
+                            reason
                     ));
 
                     return;
@@ -105,11 +101,11 @@ public abstract class ServerStatusPingerMixin {
                         "Ping attempt {} for server {} failed, giving up: {}",
                         attempt,
                         data.ip,
-                        details.reason().getString()
+                        reason.getString()
                 );
 
                 cleanup(data);
-                original.onDisconnect(details);
+                original.onDisconnect(reason);
             }
 
             @Override
@@ -124,21 +120,11 @@ public abstract class ServerStatusPingerMixin {
             ServerStatusPinger pinger,
             ServerData data,
             Runnable onPersistentDataChange,
-            Runnable onPongResponse,
-            EventLoopGroupHolder eventLoopGroupHolder,
             ClientStatusPacketListener original,
-            DisconnectionDetails details
+            Component reason
     ) {
         try {
-            pinger.pingServer(
-                    data,
-                    onPersistentDataChange,
-                    () -> {
-                        cleanup(data);
-                        onPongResponse.run();
-                    },
-                    eventLoopGroupHolder
-            );
+            pinger.pingServer(data, onPersistentDataChange);
         } catch (Throwable throwable) {
             LOGGER.error(
                     "Error while retrying ping for server {}",
@@ -147,13 +133,13 @@ public abstract class ServerStatusPingerMixin {
             );
 
             cleanup(data);
-            original.onDisconnect(details);
+            original.onDisconnect(reason);
         }
     }
 
     @Unique
-    private static boolean isFinished(DisconnectionDetails details) {
-        return isFinishedReason(details.reason());
+    private static boolean isFinished(Component reason) {
+        return isFinishedReason(reason);
     }
 
     // Compare the translation key, the translated text depends on the client language

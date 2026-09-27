@@ -26,11 +26,17 @@ dependencies {
 }
 
 processResources {
-	def version = project.version
-	inputs.property "version", version
+	def props = [
+			version             : project.version,
+			minecraft_dependency: "~${project.minecraft_version}",
+			loader_dependency   : project.loader_version,
+			java_version        : 25,
+			mixin_java_version  : 21,
+	]
+	inputs.properties props
 
-	filesMatching("fabric.mod.json") {
-		expand "version": version
+	filesMatching(["fabric.mod.json", "serverpingfixer.mixins.json"]) {
+		expand props
 	}
 }
 
@@ -56,6 +62,13 @@ jar {
 		rename { "${it}_$projectName"}
 	}
 }
+
+def copyToOut = tasks.register('copyToOut', Copy) {
+	from jar
+	into file("out/${project.minecraft_version}")
+}
+
+build.finalizedBy copyToOut
 
 // configure the maven publication
 publishing {
