@@ -13,3 +13,5 @@ pluginManagement {
 		id("com.modrinth.minotaur") version providers.gradleProperty("minotaur_version").get()
 	}
 }
+
+includeBuild("legacy")
