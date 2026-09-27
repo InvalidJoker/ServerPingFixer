@@ -73,7 +73,10 @@ modrinth {
 	versionType = property("modrinth_version_type") as String
 	uploadFile.set(tasks.jar)
 	gameVersions.add(minecraftVersion)
-	loaders.add("fabric")
+	loaders.addAll(buildList {
+		add("fabric")
+		add("quilt")
+	})
 	dependencies {
 		required.project("fabric-api")
 	}
